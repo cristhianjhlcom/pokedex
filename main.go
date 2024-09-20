@@ -522,6 +522,11 @@ func getCommands() map[string]CLICommand {
 			description: "View information about caught pokemon",
 			callback:    callbackInspect,
 		},
+		"pokedex": {
+			name:        "pokedex",
+			description: "View all the pokemon in the pokedex",
+			callback:    callbackPokedex,
+		},
 		"exit": {
 			name:        "exit",
 			description: "Turns off the pokedex",
@@ -596,6 +601,16 @@ func callbackInspect(config *Config, args ...string) error {
 	fmt.Printf("Name: %s", pokemon.Name)
 	fmt.Printf("Height: %v", pokemon.Height)
 	fmt.Printf("Weight: %v", pokemon.Weight)
+	return nil
+}
+
+func callbackPokedex(config *Config, args ...string) error {
+	fmt.Println("Pokemon in Pokedex")
+	for _, pokemon := range config.caughtPokemon {
+		fmt.Printf("Name: %s", pokemon.Name)
+		fmt.Printf("Height: %v", pokemon.Height)
+		fmt.Printf("Weight: %v", pokemon.Weight)
+	}
 	return nil
 }
 
