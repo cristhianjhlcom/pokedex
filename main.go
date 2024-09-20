@@ -11,13 +11,15 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	cache "github.com/cristhianjhlcom/pokedex/internal"
 )
 
 const baseURL = "https://pokeapi.co/api/v2"
 
 func main() {
 	config := Config{
-		pokeAPIClient: NewClient(),
+		pokeAPIClient: NewClient(time.Hour),
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -55,6 +57,7 @@ type CLICommand struct {
 }
 
 type Client struct {
+	cache      cache.Cache
 	httpClient http.Client
 }
 
@@ -68,8 +71,9 @@ type LocationAreaResponse struct {
 	} `json:"results"`
 }
 
-func NewClient() Client {
+func NewClient(cacheInterval time.Duration) Client {
 	return Client{
+		cache: cache.NewCache(cacheInterval),
 		httpClient: http.Client{
 			Timeout: time.Minute,
 		},
@@ -81,6 +85,16 @@ func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaResponse, error
 	fullURL := baseURL + endpoint
 	if pageURL != nil {
 		fullURL = *pageURL
+	}
+	data, ok := c.cache.Get(fullURL)
+	if ok {
+		// cache hit.
+		locationAreasResponse := LocationAreaResponse{}
+		err := json.Unmarshal(data, &locationAreasResponse)
+		if err != nil {
+			return LocationAreaResponse{}, err
+		}
+		return locationAreasResponse, nil
 	}
 	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
@@ -94,7 +108,7 @@ func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaResponse, error
 	if response.StatusCode > 399 {
 		return LocationAreaResponse{}, fmt.Errorf("bad status code: %v", response.StatusCode)
 	}
-	data, err := io.ReadAll(response.Body)
+	data, err = io.ReadAll(response.Body)
 	if err != nil {
 		return LocationAreaResponse{}, err
 	}
@@ -103,6 +117,7 @@ func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaResponse, error
 	if err != nil {
 		return LocationAreaResponse{}, err
 	}
+	c.cache.Add(fullURL, data)
 	return locationAreasResponse, nil
 }
 
