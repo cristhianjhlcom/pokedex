@@ -2,12 +2,23 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
+const baseURL = "https://pokeapi.co/api/v2"
+
 func main() {
+	config := Config{
+		pokeAPIClient: NewClient(),
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("pokedex > ")
@@ -24,14 +35,75 @@ func main() {
 			fmt.Println("invalid command")
 			continue
 		}
-		command.callback()
+		err := command.callback(&config)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
+}
+
+type Config struct {
+	pokeAPIClient           Client
+	nextLocationAreaURL     *string
+	previousLocationAreaURL *string
 }
 
 type CLICommand struct {
 	name        string
 	description string
-	callback    func() error
+	callback    func(*Config) error
+}
+
+type Client struct {
+	httpClient http.Client
+}
+
+type LocationAreaResponse struct {
+	Count    int     `json:"count"`
+	Next     *string `json:"next"`
+	Previous *string `json:"previous"`
+	Results  []struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	} `json:"results"`
+}
+
+func NewClient() Client {
+	return Client{
+		httpClient: http.Client{
+			Timeout: time.Minute,
+		},
+	}
+}
+
+func (c *Client) ListLocationAreas(pageURL *string) (LocationAreaResponse, error) {
+	endpoint := "/location/"
+	fullURL := baseURL + endpoint
+	if pageURL != nil {
+		fullURL = *pageURL
+	}
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return LocationAreaResponse{}, err
+	}
+	response, err := c.httpClient.Do(req)
+	if err != nil {
+		return LocationAreaResponse{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode > 399 {
+		return LocationAreaResponse{}, fmt.Errorf("bad status code: %v", response.StatusCode)
+	}
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		return LocationAreaResponse{}, err
+	}
+	locationAreasResponse := LocationAreaResponse{}
+	err = json.Unmarshal(data, &locationAreasResponse)
+	if err != nil {
+		return LocationAreaResponse{}, err
+	}
+	return locationAreasResponse, nil
 }
 
 func getCommands() map[string]CLICommand {
@@ -41,6 +113,16 @@ func getCommands() map[string]CLICommand {
 			description: "Prints the help menu",
 			callback:    callbackHelp,
 		},
+		"map": {
+			name:        "map",
+			description: "Lists some locations areas",
+			callback:    callbackMap,
+		},
+		"mapb": {
+			name:        "mapb",
+			description: "Lists the previous page of locations areas",
+			callback:    callbackMapb,
+		},
 		"exit": {
 			name:        "exit",
 			description: "Turns off the pokedex",
@@ -49,7 +131,7 @@ func getCommands() map[string]CLICommand {
 	}
 }
 
-func callbackHelp() error {
+func callbackHelp(config *Config) error {
 	fmt.Println("Welcome to the Pokedex help menu!")
 	fmt.Println("Here are you available commands: ")
 	availableCommands := getCommands()
@@ -60,8 +142,41 @@ func callbackHelp() error {
 	return nil
 }
 
-func callbackExit() error {
+func callbackExit(config *Config) error {
 	os.Exit(0)
+	return nil
+}
+
+func callbackMap(config *Config) error {
+	response, err := config.pokeAPIClient.ListLocationAreas(config.nextLocationAreaURL)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	fmt.Println("Location areas")
+	for _, area := range response.Results {
+		fmt.Printf(" - %s\n", area.Name)
+	}
+	config.nextLocationAreaURL = response.Next
+	config.previousLocationAreaURL = response.Previous
+	return nil
+}
+
+func callbackMapb(config *Config) error {
+	if config.previousLocationAreaURL == nil {
+		return errors.New("You are on the first page")
+	}
+	response, err := config.pokeAPIClient.ListLocationAreas(config.previousLocationAreaURL)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
+	fmt.Println("Location areas")
+	for _, area := range response.Results {
+		fmt.Printf(" - %s\n", area.Name)
+	}
+	config.nextLocationAreaURL = response.Next
+	config.previousLocationAreaURL = response.Previous
 	return nil
 }
 
