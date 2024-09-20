@@ -517,6 +517,11 @@ func getCommands() map[string]CLICommand {
 			description: "Attempt to catch a pokemon and add it to your pokedex",
 			callback:    callbackCatch,
 		},
+		"inspect": {
+			name:        "inspect {pokemon_name}",
+			description: "View information about caught pokemon",
+			callback:    callbackInspect,
+		},
 		"exit": {
 			name:        "exit",
 			description: "Turns off the pokedex",
@@ -576,6 +581,21 @@ func callbackCatch(config *Config, args ...string) error {
 	}
 	config.caughtPokemon[pokemonName] = response
 	fmt.Printf("%s was caught!\n", pokemonName)
+	return nil
+}
+
+func callbackInspect(config *Config, args ...string) error {
+	if len(args) != 1 {
+		return errors.New("No pokemon name provided")
+	}
+	pokemonName := args[0]
+	pokemon, ok := config.caughtPokemon[pokemonName]
+	if !ok {
+		return errors.New("you haven't caught this pokemon yet")
+	}
+	fmt.Printf("Name: %s", pokemon.Name)
+	fmt.Printf("Height: %v", pokemon.Height)
+	fmt.Printf("Weight: %v", pokemon.Weight)
 	return nil
 }
 
